@@ -7,6 +7,16 @@ const CRC16: crc::Crc<u16> = crc::Crc::<u16>::new(&crc::CRC_16_XMODEM);
 const FRAME_END: u8 = 3;
 const FRAME_START_SHORT: u8 = 2;
 
+/// The maximum length of a frame in bytes, and the default [`Decoder`] buffer
+/// length.
+///
+/// A frame consists of a start byte, a 1-byte payload length, the payload, a
+/// CRC16 and an end byte. Only short frames are supported, so the payload
+/// never exceeds 255 bytes.
+///
+/// [`Decoder`]: crate::Decoder
+pub const MAX_FRAME_LEN: usize = 1 + 1 + u8::MAX as usize + 2 + 1;
+
 // The VESC firmware caps the FwVersion payload at 65 bytes.
 // This decoder allows each name buffer to hold up to 39 bytes (including NUL).
 // The two names still share the same 65-byte payload budget with fixed fields.
