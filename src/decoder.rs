@@ -1,4 +1,4 @@
-use crate::{CommandReply, DecodeError};
+use crate::{CommandReply, DecodeError, MAX_FRAME_LEN};
 
 /// A streaming decoder for VESC communication protocol.
 ///
@@ -13,13 +13,13 @@ use crate::{CommandReply, DecodeError};
 /// [`feed`]: Self::feed
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Decoder<const BUFLEN: usize = 512> {
+pub struct Decoder<const BUFLEN: usize = MAX_FRAME_LEN> {
     buf: [u8; BUFLEN],
     wpos: usize,
     rpos: usize,
 }
 
-impl Default for Decoder<512> {
+impl Default for Decoder<MAX_FRAME_LEN> {
     fn default() -> Self {
         Self::new()
     }

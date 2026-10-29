@@ -72,6 +72,7 @@ pub use command::{
     FwInfo,
     FwVersion,
     HwType,
+    MAX_FRAME_LEN,
     NrfFlags,
     Position,
     QmlAppFlags,

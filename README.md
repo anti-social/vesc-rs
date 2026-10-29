@@ -73,14 +73,21 @@ tx.write_all(&buf[..size]).unwrap();
 
 ```rust
 let mut decoder = Decoder::default();
-let mut buf = [0u8; 512];
+let mut buf = [0u8; 64];
 
 loop {
-    let size = rx.read(&mut buf).unwrap()
-    decoder.feed(&buf[..size]).unwrap();
+    let size = rx.read(&mut buf).unwrap();
+    let mut data = &buf[..size];
 
-    for reply in self.decoder.by_ref() {
-        // process `reply`
+    // The decoder buffer holds up to `vesc::MAX_FRAME_LEN` bytes by default,
+    // so `feed` may consume only part of the input.
+    while !data.is_empty() {
+        let consumed = decoder.feed(data).unwrap();
+        data = &data[consumed..];
+
+        for reply in decoder.by_ref() {
+            // process `reply`
+        }
     }
 }
 ```
