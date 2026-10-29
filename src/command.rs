@@ -263,7 +263,7 @@ pub enum Command<'a> {
 
     /// Requests a subset of telemetry data specified by a [`ValuesMask`]
     /// bitmask. Using a mask reduces communication overhead and processing time
-    /// compared to [`GetValues`], making it more efficient when only selected
+    /// compared to [`GetValues`](Self::GetValues), making it more efficient when only selected
     /// data fields are needed.
     GetValuesSelective(ValuesMask),
 
