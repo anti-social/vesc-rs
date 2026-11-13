@@ -1,6 +1,6 @@
 //! The VESC® firmware is an open source motor controller firmware, and this
 //! library implements the necessary structures and functions to [`encode`]
-//! commands and [`decode`] replies.
+//! commands and decode replies with a [`Decoder`].
 //!
 //! # Examples
 //!
@@ -13,20 +13,6 @@
 //! let command = Command::GetValuesSelective(ValuesMask::RPM | ValuesMask::VOLTAGE_IN);
 //! let frame_len = vesc::encode(command, &mut buf).unwrap();
 //! let frame = &buf[..frame_len];
-//! ```
-//!
-//! ## Decoding a Reply
-//!
-//! ```no_run
-//! use vesc::CommandReply;
-//!
-//! match vesc::decode(&[2, 7, 50, 0, 0, 1, 128, 0, 0, 4, 210, 1, 176, 254, 22, 3]) {
-//!     Ok((_, CommandReply::GetValuesSelective(values))) => {
-//!         let rpm = values.rpm;
-//!         let voltage_in = values.voltage_in;
-//!     },
-//!     _ => (),
-//! }
 //! ```
 //!
 //! ## Decoding a Stream
@@ -94,7 +80,6 @@ pub use command::{
     Voltage,
     WattHours,
     WattHoursLeft,
-    decode,
     encode,
 };
 pub use decoder::Decoder;

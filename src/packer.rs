@@ -75,11 +75,6 @@ impl<'a> Unpacker<'a> {
     }
 
     #[inline]
-    pub fn unpack_u16(&mut self) -> Result<u16, DecodeError> {
-        Ok(u16::from_be_bytes(self.consume(2)?.try_into().unwrap()))
-    }
-
-    #[inline]
     pub fn unpack_i16(&mut self) -> Result<i16, DecodeError> {
         Ok(i16::from_be_bytes(self.consume(2)?.try_into().unwrap()))
     }

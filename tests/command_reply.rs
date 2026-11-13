@@ -7,6 +7,7 @@ use vesc::{
     AvgVoltage,
     CommandReply,
     DecodeError,
+    Decoder,
     DutyCycle,
     FaultCode,
     HwType,
@@ -21,16 +22,25 @@ use vesc::{
     WattHours,
 };
 
+/// Decodes a reply from `input`, which must hold exactly one frame.
+fn decode_frame(input: &[u8]) -> core::result::Result<CommandReply, DecodeError> {
+    let mut decoder = Decoder::default();
+    let (consumed, frame) = decoder.feed(input);
+    let payload = frame.expect("no complete frame in input")?;
+    assert_eq!(consumed, input.len(), "input holds more than one frame");
+    CommandReply::from_payload(payload)
+}
+
 #[test]
 fn decode_fw_version_incomplete_data() {
     let input = [2, 3, 0, 7, 0, 153, 151, 3];
-    assert_that!(vesc::decode(&input), err(eq(&DecodeError::IncompleteData)));
+    assert_that!(decode_frame(&input), err(eq(&DecodeError::IncompleteData)));
 }
 
 #[test]
 fn decode_fw_version_incomplete_uuid() {
     let input = [2, 5, 0, 7, 0, 97, 0, 105, 54, 3];
-    assert_that!(vesc::decode(&input), err(eq(&DecodeError::IncompleteData)));
+    assert_that!(decode_frame(&input), err(eq(&DecodeError::IncompleteData)));
 }
 
 #[test]
@@ -40,27 +50,24 @@ fn decode_fw_version_full_reply() {
         1, 2, 3, 3, 100, 101, 102, 97, 117, 108, 116, 0, 18, 52, 86, 120, 225, 223, 3,
     ];
 
-    let expected = (
-        eq(&46),
-        pat!(&CommandReply::FwVersion(pat!(vesc::FwVersion {
-            major: eq(7),
-            minor: eq(0),
-            uuid: eq([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
-            pairing_done: eq(true),
-            test_version_number: eq(0),
-            hw_type: eq(HwType::Vesc),
-            custom_config_num: eq(2),
-            has_phase_filters: eq(true),
-            qml_hw: eq(QmlHw::Fullscreen),
-            qml_app: eq(QmlAppFlags::from_bits_retain(3)),
-            nrf_flags: eq(NrfFlags::from_bits_retain(3)),
-            hw_crc: eq(0x12345678),
-            ..
-        }))),
-    );
-    assert_that!(vesc::decode(&input), ok(expected));
+    let expected = pat!(&CommandReply::FwVersion(pat!(vesc::FwVersion {
+        major: eq(7),
+        minor: eq(0),
+        uuid: eq([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
+        pairing_done: eq(true),
+        test_version_number: eq(0),
+        hw_type: eq(HwType::Vesc),
+        custom_config_num: eq(2),
+        has_phase_filters: eq(true),
+        qml_hw: eq(QmlHw::Fullscreen),
+        qml_app: eq(QmlAppFlags::from_bits_retain(3)),
+        nrf_flags: eq(NrfFlags::from_bits_retain(3)),
+        hw_crc: eq(0x12345678),
+        ..
+    })));
+    assert_that!(decode_frame(&input), ok(expected));
 
-    let (_, reply) = vesc::decode(&input).unwrap();
+    let reply = decode_frame(&input).unwrap();
     let CommandReply::FwVersion(version) = reply else {
         panic!("expected fw version reply");
     };
@@ -75,18 +82,15 @@ fn decode_fw_info() {
         38, 208, 3,
     ];
 
-    let expected = (
-        eq(&25),
-        pat!(&CommandReply::FwInfo(pat!(vesc::FwInfo {
-            major: eq(7),
-            minor: eq(1),
-            test_version_number: eq(2),
-            ..
-        }))),
-    );
-    assert_that!(vesc::decode(&input), ok(expected));
+    let expected = pat!(&CommandReply::FwInfo(pat!(vesc::FwInfo {
+        major: eq(7),
+        minor: eq(1),
+        test_version_number: eq(2),
+        ..
+    })));
+    assert_that!(decode_frame(&input), ok(expected));
 
-    let (_, reply) = vesc::decode(&input).unwrap();
+    let reply = decode_frame(&input).unwrap();
     let CommandReply::FwInfo(info) = reply else {
         panic!("expected fw info reply");
     };
@@ -102,36 +106,33 @@ fn decode_get_values_zero_rpm() {
         0, 18, 6, 65, 224, 20, 1, 21, 252, 216, 252, 202, 0, 0, 0, 8, 0, 0, 0, 12, 0, 218, 113, 3,
     ];
 
-    let expected = (
-        eq(&79),
-        pat!(&CommandReply::GetValues(pat!(Values {
-            temp_mosfet: eq(Temperature::from_raw(276)),
-            temp_motor: eq(Temperature::from_raw(0)),
-            avg_current_motor: eq(AvgCurrent::from_raw(0)),
-            avg_current_input: eq(AvgCurrent::from_raw(0)),
-            avg_current_d: eq(AvgCurrent::from_raw(0)),
-            avg_current_q: eq(AvgCurrent::from_raw(0)),
-            duty_cycle: eq(DutyCycle::from_raw(0)),
-            rpm: eq(0),
-            voltage_in: eq(Voltage::from_raw(375)),
-            amp_hours: eq(AmpHours::from_raw(9)),
-            amp_hours_charged: eq(AmpHours::from_raw(0)),
-            watt_hours: eq(WattHours::from_raw(372)),
-            watt_hours_charged: eq(WattHours::from_raw(0)),
-            tachometer: eq(-31936),
-            tachometer_abs: eq(174334),
-            fault_code: eq(FaultCode::None),
-            pid_pos: eq(Position::from_raw(302399968)),
-            controller_id: eq(20),
-            temp_mosfet1: eq(Temperature::from_raw(277)),
-            temp_mosfet2: eq(Temperature::from_raw(-808)),
-            temp_mosfet3: eq(Temperature::from_raw(-822)),
-            avg_voltage_d: eq(AvgVoltage::from_raw(8)),
-            avg_voltage_q: eq(AvgVoltage::from_raw(12)),
-            status: eq(0),
-        }))),
-    );
-    assert_that!(vesc::decode(&input), ok(expected));
+    let expected = pat!(&CommandReply::GetValues(pat!(Values {
+        temp_mosfet: eq(Temperature::from_raw(276)),
+        temp_motor: eq(Temperature::from_raw(0)),
+        avg_current_motor: eq(AvgCurrent::from_raw(0)),
+        avg_current_input: eq(AvgCurrent::from_raw(0)),
+        avg_current_d: eq(AvgCurrent::from_raw(0)),
+        avg_current_q: eq(AvgCurrent::from_raw(0)),
+        duty_cycle: eq(DutyCycle::from_raw(0)),
+        rpm: eq(0),
+        voltage_in: eq(Voltage::from_raw(375)),
+        amp_hours: eq(AmpHours::from_raw(9)),
+        amp_hours_charged: eq(AmpHours::from_raw(0)),
+        watt_hours: eq(WattHours::from_raw(372)),
+        watt_hours_charged: eq(WattHours::from_raw(0)),
+        tachometer: eq(-31936),
+        tachometer_abs: eq(174334),
+        fault_code: eq(FaultCode::None),
+        pid_pos: eq(Position::from_raw(302399968)),
+        controller_id: eq(20),
+        temp_mosfet1: eq(Temperature::from_raw(277)),
+        temp_mosfet2: eq(Temperature::from_raw(-808)),
+        temp_mosfet3: eq(Temperature::from_raw(-822)),
+        avg_voltage_d: eq(AvgVoltage::from_raw(8)),
+        avg_voltage_q: eq(AvgVoltage::from_raw(12)),
+        status: eq(0),
+    })));
+    assert_that!(decode_frame(&input), ok(expected));
 }
 
 #[test]
@@ -143,36 +144,33 @@ fn decode_get_values_forward_rpm() {
         58, 151, 3,
     ];
 
-    let expected = (
-        eq(&79),
-        pat!(&CommandReply::GetValues(pat!(Values {
-            temp_mosfet: eq(Temperature::from_raw(276)),
-            temp_motor: eq(Temperature::from_raw(0)),
-            avg_current_motor: eq(AvgCurrent::from_raw(37)),
-            avg_current_input: eq(AvgCurrent::from_raw(3)),
-            avg_current_d: eq(AvgCurrent::from_raw(0)),
-            avg_current_q: eq(AvgCurrent::from_raw(32)),
-            duty_cycle: eq(DutyCycle::from_raw(110)),
-            rpm: eq(1019),
-            voltage_in: eq(Voltage::from_raw(381)),
-            amp_hours: eq(AmpHours::from_raw(17)),
-            amp_hours_charged: eq(AmpHours::from_raw(0)),
-            watt_hours: eq(WattHours::from_raw(649)),
-            watt_hours_charged: eq(WattHours::from_raw(0)),
-            tachometer: eq(-37045),
-            tachometer_abs: eq(171975),
-            fault_code: eq(FaultCode::None),
-            pid_pos: eq(Position::from_raw(74087464)),
-            controller_id: eq(1),
-            temp_mosfet1: eq(Temperature::from_raw(277)),
-            temp_mosfet2: eq(Temperature::from_raw(-948)),
-            temp_mosfet3: eq(Temperature::from_raw(-1011)),
-            avg_voltage_d: eq(AvgVoltage::from_raw(229)),
-            avg_voltage_q: eq(AvgVoltage::from_raw(2262)),
-            status: eq(0),
-        }))),
-    );
-    assert_that!(vesc::decode(&input), ok(expected));
+    let expected = pat!(&CommandReply::GetValues(pat!(Values {
+        temp_mosfet: eq(Temperature::from_raw(276)),
+        temp_motor: eq(Temperature::from_raw(0)),
+        avg_current_motor: eq(AvgCurrent::from_raw(37)),
+        avg_current_input: eq(AvgCurrent::from_raw(3)),
+        avg_current_d: eq(AvgCurrent::from_raw(0)),
+        avg_current_q: eq(AvgCurrent::from_raw(32)),
+        duty_cycle: eq(DutyCycle::from_raw(110)),
+        rpm: eq(1019),
+        voltage_in: eq(Voltage::from_raw(381)),
+        amp_hours: eq(AmpHours::from_raw(17)),
+        amp_hours_charged: eq(AmpHours::from_raw(0)),
+        watt_hours: eq(WattHours::from_raw(649)),
+        watt_hours_charged: eq(WattHours::from_raw(0)),
+        tachometer: eq(-37045),
+        tachometer_abs: eq(171975),
+        fault_code: eq(FaultCode::None),
+        pid_pos: eq(Position::from_raw(74087464)),
+        controller_id: eq(1),
+        temp_mosfet1: eq(Temperature::from_raw(277)),
+        temp_mosfet2: eq(Temperature::from_raw(-948)),
+        temp_mosfet3: eq(Temperature::from_raw(-1011)),
+        avg_voltage_d: eq(AvgVoltage::from_raw(229)),
+        avg_voltage_q: eq(AvgVoltage::from_raw(2262)),
+        status: eq(0),
+    })));
+    assert_that!(decode_frame(&input), ok(expected));
 }
 
 #[test]
@@ -184,36 +182,33 @@ fn decode_get_values_reverse_rpm() {
         255, 240, 129, 0, 12, 51, 3,
     ];
 
-    let expected = (
-        eq(&79),
-        pat!(&CommandReply::GetValues(pat!(Values {
-            temp_mosfet: eq(Temperature::from_raw(269)),
-            temp_motor: eq(Temperature::from_raw(0)),
-            avg_current_motor: eq(AvgCurrent::from_raw(92)),
-            avg_current_input: eq(AvgCurrent::from_raw(12)),
-            avg_current_d: eq(AvgCurrent::from_raw(0)),
-            avg_current_q: eq(AvgCurrent::from_raw(-87)),
-            duty_cycle: eq(DutyCycle::from_raw(-237)),
-            rpm: eq(-2210),
-            voltage_in: eq(Voltage::from_raw(373)),
-            amp_hours: eq(AmpHours::from_raw(7)),
-            amp_hours_charged: eq(AmpHours::from_raw(0)),
-            watt_hours: eq(WattHours::from_raw(274)),
-            watt_hours_charged: eq(WattHours::from_raw(0)),
-            tachometer: eq(-28230),
-            tachometer_abs: eq(133952),
-            fault_code: eq(FaultCode::None),
-            pid_pos: eq(Position::from_raw(233105136)),
-            controller_id: eq(20),
-            temp_mosfet1: eq(Temperature::from_raw(269)),
-            temp_mosfet2: eq(Temperature::from_raw(-909)),
-            temp_mosfet3: eq(Temperature::from_raw(-948)),
-            avg_voltage_d: eq(AvgVoltage::from_raw(230)),
-            avg_voltage_q: eq(AvgVoltage::from_raw(-3967)),
-            status: eq(0),
-        }))),
-    );
-    assert_that!(vesc::decode(&input), ok(expected));
+    let expected = pat!(&CommandReply::GetValues(pat!(Values {
+        temp_mosfet: eq(Temperature::from_raw(269)),
+        temp_motor: eq(Temperature::from_raw(0)),
+        avg_current_motor: eq(AvgCurrent::from_raw(92)),
+        avg_current_input: eq(AvgCurrent::from_raw(12)),
+        avg_current_d: eq(AvgCurrent::from_raw(0)),
+        avg_current_q: eq(AvgCurrent::from_raw(-87)),
+        duty_cycle: eq(DutyCycle::from_raw(-237)),
+        rpm: eq(-2210),
+        voltage_in: eq(Voltage::from_raw(373)),
+        amp_hours: eq(AmpHours::from_raw(7)),
+        amp_hours_charged: eq(AmpHours::from_raw(0)),
+        watt_hours: eq(WattHours::from_raw(274)),
+        watt_hours_charged: eq(WattHours::from_raw(0)),
+        tachometer: eq(-28230),
+        tachometer_abs: eq(133952),
+        fault_code: eq(FaultCode::None),
+        pid_pos: eq(Position::from_raw(233105136)),
+        controller_id: eq(20),
+        temp_mosfet1: eq(Temperature::from_raw(269)),
+        temp_mosfet2: eq(Temperature::from_raw(-909)),
+        temp_mosfet3: eq(Temperature::from_raw(-948)),
+        avg_voltage_d: eq(AvgVoltage::from_raw(230)),
+        avg_voltage_q: eq(AvgVoltage::from_raw(-3967)),
+        status: eq(0),
+    })));
+    assert_that!(decode_frame(&input), ok(expected));
 }
 
 #[test]
@@ -225,36 +220,33 @@ fn decode_get_values_motor_fault() {
         255, 240, 129, 0, 183, 254, 3,
     ];
 
-    let expected = (
-        eq(&79),
-        pat!(&CommandReply::GetValues(pat!(Values {
-            temp_mosfet: eq(Temperature::from_raw(269)),
-            temp_motor: eq(Temperature::from_raw(0)),
-            avg_current_motor: eq(AvgCurrent::from_raw(92)),
-            avg_current_input: eq(AvgCurrent::from_raw(12)),
-            avg_current_d: eq(AvgCurrent::from_raw(0)),
-            avg_current_q: eq(AvgCurrent::from_raw(-87)),
-            duty_cycle: eq(DutyCycle::from_raw(-237)),
-            rpm: eq(-2210),
-            voltage_in: eq(Voltage::from_raw(373)),
-            amp_hours: eq(AmpHours::from_raw(7)),
-            amp_hours_charged: eq(AmpHours::from_raw(0)),
-            watt_hours: eq(WattHours::from_raw(274)),
-            watt_hours_charged: eq(WattHours::from_raw(0)),
-            tachometer: eq(-28230),
-            tachometer_abs: eq(133952),
-            fault_code: eq(FaultCode::UnderVoltage),
-            pid_pos: eq(Position::from_raw(233105136)),
-            controller_id: eq(20),
-            temp_mosfet1: eq(Temperature::from_raw(269)),
-            temp_mosfet2: eq(Temperature::from_raw(-909)),
-            temp_mosfet3: eq(Temperature::from_raw(-948)),
-            avg_voltage_d: eq(AvgVoltage::from_raw(230)),
-            avg_voltage_q: eq(AvgVoltage::from_raw(-3967)),
-            status: eq(0),
-        }))),
-    );
-    assert_that!(vesc::decode(&input), ok(expected));
+    let expected = pat!(&CommandReply::GetValues(pat!(Values {
+        temp_mosfet: eq(Temperature::from_raw(269)),
+        temp_motor: eq(Temperature::from_raw(0)),
+        avg_current_motor: eq(AvgCurrent::from_raw(92)),
+        avg_current_input: eq(AvgCurrent::from_raw(12)),
+        avg_current_d: eq(AvgCurrent::from_raw(0)),
+        avg_current_q: eq(AvgCurrent::from_raw(-87)),
+        duty_cycle: eq(DutyCycle::from_raw(-237)),
+        rpm: eq(-2210),
+        voltage_in: eq(Voltage::from_raw(373)),
+        amp_hours: eq(AmpHours::from_raw(7)),
+        amp_hours_charged: eq(AmpHours::from_raw(0)),
+        watt_hours: eq(WattHours::from_raw(274)),
+        watt_hours_charged: eq(WattHours::from_raw(0)),
+        tachometer: eq(-28230),
+        tachometer_abs: eq(133952),
+        fault_code: eq(FaultCode::UnderVoltage),
+        pid_pos: eq(Position::from_raw(233105136)),
+        controller_id: eq(20),
+        temp_mosfet1: eq(Temperature::from_raw(269)),
+        temp_mosfet2: eq(Temperature::from_raw(-909)),
+        temp_mosfet3: eq(Temperature::from_raw(-948)),
+        avg_voltage_d: eq(AvgVoltage::from_raw(230)),
+        avg_voltage_q: eq(AvgVoltage::from_raw(-3967)),
+        status: eq(0),
+    })));
+    assert_that!(decode_frame(&input), ok(expected));
 }
 
 #[test]
@@ -264,19 +256,16 @@ fn decode_get_values_selective_zero_rpm() {
         63, 148, 3,
     ];
 
-    let expected = (
-        eq(&28),
-        pat!(&CommandReply::GetValuesSelective(pat!(Values {
-            avg_current_input: eq(AvgCurrent::from_raw(0)),
-            rpm: eq(0),
-            voltage_in: eq(Voltage::from_raw(384)),
-            tachometer: eq(-25018),
-            fault_code: eq(FaultCode::None),
-            controller_id: eq(1),
-            ..
-        }))),
-    );
-    assert_that!(vesc::decode(&input), ok(expected));
+    let expected = pat!(&CommandReply::GetValuesSelective(pat!(Values {
+        avg_current_input: eq(AvgCurrent::from_raw(0)),
+        rpm: eq(0),
+        voltage_in: eq(Voltage::from_raw(384)),
+        tachometer: eq(-25018),
+        fault_code: eq(FaultCode::None),
+        controller_id: eq(1),
+        ..
+    })));
+    assert_that!(decode_frame(&input), ok(expected));
 }
 
 #[test]
@@ -286,19 +275,16 @@ fn decode_get_values_selective_forward_rpm() {
         20, 45, 58, 3,
     ];
 
-    let expected = (
-        eq(&28),
-        pat!(&CommandReply::GetValuesSelective(pat!(Values {
-            avg_current_input: eq(AvgCurrent::from_raw(4)),
-            rpm: eq(989),
-            voltage_in: eq(Voltage::from_raw(375)),
-            tachometer: eq(-21973),
-            fault_code: eq(FaultCode::None),
-            controller_id: eq(20),
-            ..
-        }))),
-    );
-    assert_that!(vesc::decode(&input), ok(expected));
+    let expected = pat!(&CommandReply::GetValuesSelective(pat!(Values {
+        avg_current_input: eq(AvgCurrent::from_raw(4)),
+        rpm: eq(989),
+        voltage_in: eq(Voltage::from_raw(375)),
+        tachometer: eq(-21973),
+        fault_code: eq(FaultCode::None),
+        controller_id: eq(20),
+        ..
+    })));
+    assert_that!(decode_frame(&input), ok(expected));
 }
 
 #[test]
@@ -308,19 +294,16 @@ fn decode_get_values_selective_reverse_rpm() {
         218, 0, 20, 94, 130, 3,
     ];
 
-    let expected = (
-        eq(&28),
-        pat!(&CommandReply::GetValuesSelective(pat!(Values {
-            avg_current_input: eq(AvgCurrent::from_raw(10)),
-            rpm: eq(-2347),
-            voltage_in: eq(Voltage::from_raw(374)),
-            tachometer: eq(-18982),
-            fault_code: eq(FaultCode::None),
-            controller_id: eq(20),
-            ..
-        }))),
-    );
-    assert_that!(vesc::decode(&input), ok(expected));
+    let expected = pat!(&CommandReply::GetValuesSelective(pat!(Values {
+        avg_current_input: eq(AvgCurrent::from_raw(10)),
+        rpm: eq(-2347),
+        voltage_in: eq(Voltage::from_raw(374)),
+        tachometer: eq(-18982),
+        fault_code: eq(FaultCode::None),
+        controller_id: eq(20),
+        ..
+    })));
+    assert_that!(decode_frame(&input), ok(expected));
 }
 
 #[test]
@@ -330,33 +313,27 @@ fn decode_get_values_selective_fault_code() {
         218, 4, 20, 146, 70, 3,
     ];
 
-    let expected = (
-        eq(&28),
-        pat!(&CommandReply::GetValuesSelective(pat!(Values {
-            avg_current_input: eq(AvgCurrent::from_raw(10)),
-            rpm: eq(-2347),
-            voltage_in: eq(Voltage::from_raw(374)),
-            tachometer: eq(-18982),
-            fault_code: eq(FaultCode::AbsOverCurrent),
-            controller_id: eq(20),
-            ..
-        }))),
-    );
-    assert_that!(vesc::decode(&input), ok(expected));
+    let expected = pat!(&CommandReply::GetValuesSelective(pat!(Values {
+        avg_current_input: eq(AvgCurrent::from_raw(10)),
+        rpm: eq(-2347),
+        voltage_in: eq(Voltage::from_raw(374)),
+        tachometer: eq(-18982),
+        fault_code: eq(FaultCode::AbsOverCurrent),
+        controller_id: eq(20),
+        ..
+    })));
+    assert_that!(decode_frame(&input), ok(expected));
 }
 
 #[test]
 fn decode_get_values_setup_selective_odometer() {
     let input = [2, 9, 51, 0, 16, 0, 0, 0, 0, 4, 210, 201, 198, 3];
 
-    let expected = (
-        eq(&14),
-        pat!(&CommandReply::GetValuesSetupSelective(pat!(SetupValues {
-            odometer: eq(1234),
-            ..
-        }))),
-    );
-    assert_that!(vesc::decode(&input), ok(expected));
+    let expected = pat!(&CommandReply::GetValuesSetupSelective(pat!(SetupValues {
+        odometer: eq(1234),
+        ..
+    })));
+    assert_that!(decode_frame(&input), ok(expected));
 }
 
 #[test]
@@ -367,23 +344,20 @@ fn decode_get_stats() {
         213, 206, 3,
     ];
 
-    let expected = (
-        eq(&54),
-        pat!(&CommandReply::GetStats(pat!(vesc::Stats {
-            speed_avg: approx_eq(1.0),
-            speed_max: approx_eq(2.0),
-            power_avg: approx_eq(3.0),
-            power_max: approx_eq(4.0),
-            current_avg: approx_eq(5.0),
-            current_max: approx_eq(6.0),
-            temp_mosfet_avg: approx_eq(7.0),
-            temp_mosfet_max: approx_eq(8.0),
-            temp_motor_avg: approx_eq(9.0),
-            temp_motor_max: approx_eq(10.0),
-            count_time: approx_eq(11.0),
-        }))),
-    );
-    assert_that!(vesc::decode(&input), ok(expected));
+    let expected = pat!(&CommandReply::GetStats(pat!(vesc::Stats {
+        speed_avg: approx_eq(1.0),
+        speed_max: approx_eq(2.0),
+        power_avg: approx_eq(3.0),
+        power_max: approx_eq(4.0),
+        current_avg: approx_eq(5.0),
+        current_max: approx_eq(6.0),
+        temp_mosfet_avg: approx_eq(7.0),
+        temp_mosfet_max: approx_eq(8.0),
+        temp_motor_avg: approx_eq(9.0),
+        temp_motor_max: approx_eq(10.0),
+        count_time: approx_eq(11.0),
+    })));
+    assert_that!(decode_frame(&input), ok(expected));
 }
 
 #[test]
@@ -392,35 +366,32 @@ fn decode_get_stats_speed_avg() {
         2, 13, 128, 0, 0, 4, 1, 65, 72, 0, 0, 69, 97, 0, 0, 114, 118, 3,
     ];
 
-    let expected = (
-        eq(&18),
-        pat!(&CommandReply::GetStats(pat!(vesc::Stats {
-            speed_avg: approx_eq(12.5),
-            count_time: approx_eq(3600.0),
-            ..
-        }))),
-    );
-    assert_that!(vesc::decode(&input), ok(expected));
+    let expected = pat!(&CommandReply::GetStats(pat!(vesc::Stats {
+        speed_avg: approx_eq(12.5),
+        count_time: approx_eq(3600.0),
+        ..
+    })));
+    assert_that!(decode_frame(&input), ok(expected));
 }
 
 #[test]
 fn decode_reset_stats() {
     let input = [2, 1, 129, 129, 169, 3];
 
-    let expected = (eq(&6), pat!(&CommandReply::ResetStats));
-    assert_that!(vesc::decode(&input), ok(expected));
+    let expected = pat!(&CommandReply::ResetStats);
+    assert_that!(decode_frame(&input), ok(expected));
 }
 
 #[test]
-fn decode_incomplete_data() {
+fn decode_incomplete_frame() {
     let input = [
         2, 23, 50, 0, 2, 161, 138, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 128, 255, 255, 158, 70, 0, 1,
         63, 148, 3,
     ];
-    let expected = &DecodeError::IncompleteData;
 
     for i in 1..input.len() {
-        assert_that!(vesc::decode(&input[..i]), err(eq(expected)));
+        let mut decoder = Decoder::default();
+        assert_eq!(decoder.feed(&input[..i]), (i, None));
     }
 }
 
@@ -435,14 +406,14 @@ fn decode_checksum_mismatch() {
         expected: 24194,
         actual: 20131,
     };
-    assert_that!(vesc::decode(&input), err(eq(expected)));
+    assert_that!(decode_frame(&input), err(eq(expected)));
 }
 
 #[test]
 fn decode_unknown_packet() {
     let input = [2, 3, 222, 4, 0, 178, 81, 3];
     let expected = &DecodeError::UnknownPacket { id: 222 };
-    assert_that!(vesc::decode(&input), err(eq(expected)));
+    assert_that!(decode_frame(&input), err(eq(expected)));
 }
 
 #[test]
@@ -451,8 +422,11 @@ fn decode_invalid_frame_start() {
         7, 23, 50, 0, 2, 161, 138, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 128, 255, 255, 158, 70, 0, 1,
         63, 148, 3,
     ];
-    let expected = &DecodeError::InvalidFrame;
-    assert_that!(vesc::decode(&input), err(eq(expected)));
+
+    // Without a start byte the frame is skipped; `2, 161` inside it starts a
+    // false frame that is still waiting for data.
+    let mut decoder = Decoder::default();
+    assert_eq!(decoder.feed(&input), (input.len(), None));
 }
 
 #[test]
@@ -462,40 +436,36 @@ fn decode_invalid_frame_end() {
         63, 148, 2,
     ];
     let expected = &DecodeError::InvalidFrame;
-    assert_that!(vesc::decode(&input), err(eq(expected)));
+    assert_that!(decode_frame(&input), err(eq(expected)));
 }
 
 #[test]
-fn decode_wrong_payload_len_gt_payload() {
-    let mut input = [
-        2, 23, 50, 0, 2, 161, 138, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 128, 255, 255, 158, 70, 0, 1,
-        63, 148, 3,
-    ];
-    input[1] = input[1] + 1;
-
-    let expected = &DecodeError::InvalidFrame;
-    assert_that!(vesc::decode(&input), err(eq(expected)));
-}
-
-#[test]
-fn decode_wrong_payload_len_lt_payload() {
-    let mut input = [
-        2, 23, 50, 0, 2, 161, 138, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 128, 255, 255, 158, 70, 0, 1,
-        63, 148, 3,
-    ];
-    input[1] = input[1] - 1;
-
-    let expected = &DecodeError::InvalidFrame;
-    assert_that!(vesc::decode(&input), err(eq(expected)));
-}
-
-#[test]
-fn decode_invalid_frame_end_witch_checksum_mismatch() {
+fn decode_checksum_checked_before_frame_end() {
     let input = [
         2, 23, 50, 0, 2, 161, 138, 0, 0, 0, 0, 0, 10, 255, 255, 246, 213, 1, 118, 255, 255, 181,
         218, 0, 21, 94, 130, 2,
     ];
 
+    assert_that!(
+        decode_frame(&input),
+        err(matches_pattern!(DecodeError::ChecksumMismatch { .. }))
+    );
+}
+
+#[test]
+fn from_payload_rejects_trailing_bytes() {
+    let payload = [
+        50, 0, 2, 161, 138, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 128, 255, 255, 158, 70, 0, 1, 0,
+    ];
     let expected = &DecodeError::InvalidFrame;
-    assert_that!(vesc::decode(&input), err(eq(expected)));
+    assert_that!(CommandReply::from_payload(&payload), err(eq(expected)));
+}
+
+#[test]
+fn from_payload_rejects_truncated_payload() {
+    let payload = [
+        50, 0, 2, 161, 138, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 128, 255, 255, 158, 70, 0,
+    ];
+    let expected = &DecodeError::IncompleteData;
+    assert_that!(CommandReply::from_payload(&payload), err(eq(expected)));
 }
