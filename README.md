@@ -79,14 +79,18 @@ loop {
     let size = rx.read(&mut buf).unwrap();
     let mut data = &buf[..size];
 
-    // The decoder buffer holds up to `vesc::MAX_FRAME_LEN` bytes by default,
-    // so `feed` may consume only part of the input.
-    while !data.is_empty() {
-        let consumed = decoder.feed(data).unwrap();
+    // `feed` stops at every decoded or rejected frame; call it again with the
+    // rest of the input until it returns `None`.
+    loop {
+        let (consumed, frame) = decoder.feed(data);
         data = &data[consumed..];
-
-        for reply in decoder.by_ref() {
-            // process `reply`
+        match frame {
+            Some(Ok(payload)) => {
+                // Parse with `CommandReply::from_payload(payload)`, or with
+                // your own code for commands this crate doesn't support.
+            }
+            Some(Err(_)) => (), // a corrupted frame was skipped
+            None => break,
         }
     }
 }

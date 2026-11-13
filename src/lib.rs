@@ -35,15 +35,21 @@
 //! use vesc::{Decoder, CommandReply};
 //!
 //! let mut decoder = Decoder::default();
-//! decoder.feed(&[2, 7, 50, 0, 0, 1, 128, 0, 0, 4, 210, 1, 176, 254, 22, 3]);
+//! let mut data: &[u8] = &[2, 7, 50, 0, 0, 1, 128, 0, 0, 4, 210, 1, 176, 254, 22, 3];
 //!
-//! for reply in decoder.by_ref() {
-//!     match reply {
-//!         CommandReply::GetValuesSelective(values) => {
-//!             let rpm = values.rpm;
-//!             let voltage_in = values.voltage_in;
+//! loop {
+//!     let (consumed, frame) = decoder.feed(data);
+//!     data = &data[consumed..];
+//!     match frame {
+//!         Some(Ok(payload)) => match CommandReply::from_payload(payload) {
+//!             Ok(CommandReply::GetValuesSelective(values)) => {
+//!                 let rpm = values.rpm;
+//!                 let voltage_in = values.voltage_in;
+//!             }
+//!             _ => (),
 //!         },
-//!         _ => (),
+//!         Some(Err(_)) => (), // a corrupted frame was skipped
+//!         None => break,
 //!     }
 //! }
 //! ```

@@ -3,9 +3,9 @@ use core::ffi::CStr;
 
 use super::packer::{Packer, Unpacker};
 
-const CRC16: crc::Crc<u16> = crc::Crc::<u16>::new(&crc::CRC_16_XMODEM);
-const FRAME_END: u8 = 3;
-const FRAME_START_SHORT: u8 = 2;
+pub(crate) static CRC16: crc::Crc<u16> = crc::Crc::<u16>::new(&crc::CRC_16_XMODEM);
+pub(crate) const FRAME_END: u8 = 3;
+pub(crate) const FRAME_START_SHORT: u8 = 2;
 
 /// The maximum length of a frame in bytes, and the default [`Decoder`] buffer
 /// length.
@@ -804,7 +804,23 @@ pub enum CommandReply {
 }
 
 impl CommandReply {
-    fn unpack_from(unpacker: &mut Unpacker) -> Result<Self, DecodeError> {
+    /// Parses a reply from a frame payload, such as one returned by
+    /// [`Decoder::feed`].
+    ///
+    /// The payload must contain exactly one reply: trailing bytes are
+    /// reported as [`DecodeError::InvalidFrame`].
+    ///
+    /// [`Decoder::feed`]: crate::Decoder::feed
+    pub fn from_payload(payload: &[u8]) -> Result<Self, DecodeError> {
+        let mut unpacker = Unpacker::new(payload);
+        let reply = Self::unpack_from(&mut unpacker)?;
+        if unpacker.pos != payload.len() {
+            return Err(DecodeError::InvalidFrame);
+        }
+        Ok(reply)
+    }
+
+    pub(crate) fn unpack_from(unpacker: &mut Unpacker) -> Result<Self, DecodeError> {
         Ok(match unpacker.unpack_u8()?.try_into()? {
             CommandId::FwVersion => Self::unpack_fw_version(unpacker)?,
             CommandId::GetValues => Self::unpack_get_values(unpacker)?,
